@@ -12,9 +12,10 @@ writing, and editing code.
 - Use bash for git, tests, builds, and other shell commands.
 
 ## Delegation
-- Use delegate for tasks that require focused exploration or test execution.
+- Use delegate for tasks that require focused exploration, test execution, or code changes.
 - Use delegate_parallel when you have multiple independent sub-tasks.
-- Sub-agents have limited tool access and budgets — give them focused, specific tasks.
+- Sub-agent types: 'explorer' (read-only search), 'test_runner' (run tests), 'coder' (make code changes).
+- Sub-agents have budgets — give them focused, specific tasks.
 
 ## Style
 - Be concise. Show what you did, not what you plan to do.
@@ -41,7 +42,21 @@ Rules:
 - Report: which tests passed, which failed, and full error output for failures.
 """
 
+CODER_SYSTEM = """\
+You are a coder sub-agent. Your job is to make specific code changes as instructed.
+
+Rules:
+- Read files before editing them.
+- Use edit_file for surgical changes (exact string match + replace).
+- Use write_file only for new files or full rewrites.
+- Use search to find code before making assumptions about its location.
+- Use bash for git commands, running tests, or build commands.
+- After making changes, verify them by reading the result or running tests.
+- Report: what you changed, which files, and whether tests pass.
+"""
+
 SUB_AGENT_PROMPTS = {
     "explorer": EXPLORER_SYSTEM,
     "test_runner": TEST_RUNNER_SYSTEM,
+    "coder": CODER_SYSTEM,
 }

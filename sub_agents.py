@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from prompts import SUB_AGENT_PROMPTS, EXPLORER_SYSTEM
-from tools import EXPLORER_TOOLS, TEST_TOOLS, TOOLS
+from tools import CODER_TOOLS, EXPLORER_TOOLS, TEST_TOOLS, TOOLS
 
 
 @dataclass
@@ -104,10 +104,17 @@ def _build_assistant_content(resp) -> list[dict]:
 
 # --- Tools exposed to the main agent ---
 
+_AGENT_TOOLS = {
+    "explorer": EXPLORER_TOOLS,
+    "test_runner": TEST_TOOLS,
+    "coder": CODER_TOOLS,
+}
+
+
 def _make_delegate_tool(provider, model: str) -> dict:
     def _delegate(task: str, agent_type: str = "explorer") -> str:
         system = SUB_AGENT_PROMPTS.get(agent_type, EXPLORER_SYSTEM)
-        tools = EXPLORER_TOOLS if agent_type == "explorer" else TEST_TOOLS
+        tools = _AGENT_TOOLS.get(agent_type, EXPLORER_TOOLS)
         runner = SubAgentRunner(provider=provider, tools=tools, system=system, model=model)
         result = runner.run(task)
         header = f"[{agent_type}] status={result.status} turns={result.turns_used}"
@@ -117,14 +124,14 @@ def _make_delegate_tool(provider, model: str) -> dict:
         "name": "delegate",
         "description": (
             "Delegate a task to a sub-agent. Types: 'explorer' (read-only codebase search), "
-            "'test_runner' (run tests and report)."
+            "'test_runner' (run tests and report), 'coder' (make code changes)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "task": {"type": "string", "description": "What the sub-agent should do"},
                 "agent_type": {
-                    "type": "string", "enum": ["explorer", "test_runner"],
+                    "type": "string", "enum": ["explorer", "test_runner", "coder"],
                     "description": "Sub-agent type", "default": "explorer",
                 },
             },
@@ -143,7 +150,7 @@ def _make_delegate_parallel_tool(provider, model: str) -> dict:
             for i, t in enumerate(tasks):
                 agent_type = t.get("agent_type", "explorer")
                 system = SUB_AGENT_PROMPTS.get(agent_type, EXPLORER_SYSTEM)
-                tools = EXPLORER_TOOLS if agent_type == "explorer" else TEST_TOOLS
+                tools = _AGENT_TOOLS.get(agent_type, EXPLORER_TOOLS)
                 runner = SubAgentRunner(provider=provider, tools=tools, system=system, model=model)
                 futures[pool.submit(runner.run, t["task"])] = i
 
@@ -172,7 +179,7 @@ def _make_delegate_parallel_tool(provider, model: str) -> dict:
                         "type": "object",
                         "properties": {
                             "task": {"type": "string"},
-                            "agent_type": {"type": "string", "enum": ["explorer", "test_runner"]},
+                            "agent_type": {"type": "string", "enum": ["explorer", "test_runner", "coder"]},
                         },
                         "required": ["task"],
                     },

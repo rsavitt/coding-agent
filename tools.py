@@ -152,3 +152,5 @@ TOOLS: list[dict] = [
 EXPLORER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "search", "bash")]
 # Tools for test runner sub-agents (read + bash)
 TEST_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "bash")]
+# Full tool access for coder sub-agents
+CODER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "edit_file", "write_file", "search", "bash")]
