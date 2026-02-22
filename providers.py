@@ -6,6 +6,11 @@ import os
 from dataclasses import dataclass, field
 
 
+# Default models — override via environment variables
+DEFAULT_ANTHROPIC_MODEL = os.environ.get("AGENT_ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+DEFAULT_OPENAI_MODEL = os.environ.get("AGENT_OPENAI_MODEL", "gpt-4o")
+
+
 @dataclass
 class ToolCall:
     id: str
@@ -28,7 +33,8 @@ class AnthropicProvider:
         self.client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
 
     def call(self, messages: list[dict], tools: list[dict], system: str = "",
-             model: str = "claude-sonnet-4-20250514", max_tokens: int = 8192) -> Response:
+             model: str = "", max_tokens: int = 8192) -> Response:
+        model = model or DEFAULT_ANTHROPIC_MODEL
         kwargs = dict(model=model, max_tokens=max_tokens, messages=messages)
         if system:
             kwargs["system"] = system
@@ -61,7 +67,8 @@ class OpenAIProvider:
         self.client = openai.OpenAI(**kwargs)
 
     def call(self, messages: list[dict], tools: list[dict], system: str = "",
-             model: str = "gpt-4o", max_tokens: int = 8192) -> Response:
+             model: str = "", max_tokens: int = 8192) -> Response:
+        model = model or DEFAULT_OPENAI_MODEL
         msgs = []
         if system:
             msgs.append({"role": "system", "content": system})

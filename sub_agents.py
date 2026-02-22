@@ -73,7 +73,10 @@ class SubAgentRunner:
         if not fn:
             return f"Error: unknown tool '{name}'"
         try:
-            return fn(**arguments)
+            result = fn(**arguments)
+            if len(result) > 30000:
+                result = result[:15000] + "\n\n... (truncated) ...\n\n" + result[-15000:]
+            return result
         except Exception as e:
             return f"Error: {e}"
 
