@@ -6,6 +6,7 @@ import re
 import sys
 
 from context import maybe_compact
+from debug import debug_log, debug_request, debug_response, debug_timer
 from providers import Response
 
 # Commands considered safe to run without user confirmation
@@ -33,11 +34,13 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
         maybe_compact(messages, total_in, provider, model=model)
 
         call_kwargs = {"model": model} if model else {}
+        debug_request(messages, tools, model, system)
         if use_streaming:
             # call_streaming prints text tokens as they arrive
             resp = provider.call_streaming(messages=messages, tools=tools, system=system, **call_kwargs)
         else:
             resp = provider.call(messages=messages, tools=tools, system=system, **call_kwargs)
+        debug_response(resp)
         total_in += resp.input_tokens
         total_out += resp.output_tokens
 
@@ -64,7 +67,8 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
                     continue
 
             _print_tool_call(tc.name, tc.arguments)
-            result = _execute_tool(tool_map, tc.name, tc.arguments)
+            with debug_timer(f"tool:{tc.name}"):
+                result = _execute_tool(tool_map, tc.name, tc.arguments)
             tool_results.append(_tool_result(tc.id, result))
 
         messages.append({"role": "user", "content": tool_results})

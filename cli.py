@@ -8,6 +8,7 @@ import sys
 import time
 
 from agent import agent_loop
+from debug import set_debug
 from prompts import MAIN_AGENT_SYSTEM
 from providers import AnthropicProvider, OpenAIProvider, auto_detect_provider
 from session import auto_save, list_sessions, load_session
@@ -25,7 +26,12 @@ def main():
     parser.add_argument("--resume", default=None, metavar="SESSION_ID",
                         help="Resume a previous session by ID or path")
     parser.add_argument("--history", action="store_true", help="List recent sessions")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging to stderr")
     args = parser.parse_args()
+
+    # Enable debug mode
+    if args.debug:
+        set_debug(True)
 
     # List sessions and exit
     if args.history:
