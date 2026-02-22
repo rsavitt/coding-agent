@@ -352,7 +352,11 @@ def _to_openai_tool(tool: dict) -> dict:
 
 
 def _to_openai_messages(messages: list[dict]) -> list[dict]:
-    """Convert Anthropic-style messages (content blocks) to OpenAI format."""
+    """Convert Anthropic-style messages (content blocks) to OpenAI format.
+
+    Handles: plain strings, text blocks, tool_use blocks, tool_result blocks,
+    image blocks (base64), and mixed content within a single message.
+    """
     result = []
     for msg in messages:
         content = msg["content"]
@@ -364,37 +368,84 @@ def _to_openai_messages(messages: list[dict]) -> list[dict]:
 
         # List of content blocks — need translation
         if isinstance(content, list):
-            # Check if it's tool results (user role with tool_result blocks)
-            if content and isinstance(content[0], dict) and content[0].get("type") == "tool_result":
-                for block in content:
-                    result.append({
-                        "role": "tool",
-                        "tool_call_id": block["tool_use_id"],
-                        "content": block["content"],
-                    })
+            if not content:
+                # Empty content list — skip
                 continue
 
-            # Assistant message with tool_use blocks
-            if msg["role"] == "assistant":
-                text_parts = []
-                tool_calls = []
-                for block in content:
-                    if block.get("type") == "text":
-                        text_parts.append(block["text"])
-                    elif block.get("type") == "tool_use":
-                        tool_calls.append({
-                            "id": block["id"],
-                            "type": "function",
-                            "function": {
-                                "name": block["name"],
-                                "arguments": json.dumps(block["input"]),
-                            },
-                        })
-                oai_msg = {"role": "assistant", "content": "\n".join(text_parts) or None}
-                if tool_calls:
-                    oai_msg["tool_calls"] = tool_calls
-                result.append(oai_msg)
-                continue
+            # Separate blocks by type: tool_results get their own messages,
+            # everything else gets grouped into one message
+            tool_result_blocks = []
+            other_blocks = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tool_result_blocks.append(block)
+                else:
+                    other_blocks.append(block)
+
+            # Emit tool result messages
+            for block in tool_result_blocks:
+                raw_content = block.get("content", "")
+                # Content can be a string or a list of blocks
+                if isinstance(raw_content, list):
+                    text_parts = []
+                    for sub in raw_content:
+                        if isinstance(sub, dict) and sub.get("type") == "text":
+                            text_parts.append(sub.get("text", ""))
+                        elif isinstance(sub, str):
+                            text_parts.append(sub)
+                    raw_content = "\n".join(text_parts)
+                result.append({
+                    "role": "tool",
+                    "tool_call_id": block["tool_use_id"],
+                    "content": raw_content,
+                })
+
+            # Handle remaining blocks
+            if other_blocks:
+                if msg["role"] == "assistant":
+                    text_parts = []
+                    tool_calls = []
+                    for block in other_blocks:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type")
+                        if btype == "text":
+                            text_parts.append(block["text"])
+                        elif btype == "tool_use":
+                            tool_calls.append({
+                                "id": block["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": block["name"],
+                                    "arguments": json.dumps(block["input"]),
+                                },
+                            })
+                    oai_msg = {"role": "assistant", "content": "\n".join(text_parts) or None}
+                    if tool_calls:
+                        oai_msg["tool_calls"] = tool_calls
+                    result.append(oai_msg)
+                else:
+                    # User or system message with mixed content (text, images, etc.)
+                    oai_parts = []
+                    for block in other_blocks:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type")
+                        if btype == "text":
+                            oai_parts.append({"type": "text", "text": block["text"]})
+                        elif btype == "image":
+                            # Anthropic format: {"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+                            source = block.get("source", {})
+                            media_type = source.get("media_type", "image/png")
+                            data = source.get("data", "")
+                            oai_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{media_type};base64,{data}"},
+                            })
+                    if oai_parts:
+                        result.append({"role": msg["role"], "content": oai_parts})
+
+            continue
 
         # Fallback
         result.append(msg)
