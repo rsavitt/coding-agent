@@ -59,6 +59,50 @@ def _search(pattern: str, path: str = ".", glob: str = "") -> str:
         return "Error: search timed out after 30s"
 
 
+def _list_files(pattern: str = "**/*", path: str = ".") -> str:
+    """List files matching a glob pattern, respecting .gitignore."""
+    import pathlib
+    path = os.path.expanduser(path)
+    base = pathlib.Path(path)
+    if not base.is_dir():
+        return f"Error: {path} is not a directory"
+
+    # Try git ls-files first (respects .gitignore)
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", path],
+            capture_output=True, text=True, timeout=10, cwd=path,
+        )
+        if result.returncode == 0:
+            all_files = result.stdout.strip().splitlines()
+            if pattern == "**/*":
+                matched = sorted(all_files)
+            else:
+                import pathlib as _pl
+                matched = sorted(f for f in all_files if _pl.PurePath(f).match(pattern))
+
+            if not matched:
+                return f"(no files matching '{pattern}')"
+            output = "\n".join(matched)
+            if len(output) > 30000:
+                output = output[:30000] + "\n... (truncated)"
+            return output
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback: pathlib glob (no .gitignore filtering)
+    try:
+        matched = sorted(str(p.relative_to(base)) for p in base.glob(pattern) if p.is_file())
+        if not matched:
+            return f"(no files matching '{pattern}')"
+        output = "\n".join(matched)
+        if len(output) > 30000:
+            output = output[:30000] + "\n... (truncated)"
+        return output
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def _bash(command: str, timeout: int = 120) -> str:
     try:
         result = subprocess.run(
@@ -134,6 +178,18 @@ TOOLS: list[dict] = [
         "execute": _search,
     },
     {
+        "name": "list_files",
+        "description": "List files matching a glob pattern (e.g. '**/*.py', 'src/**/*.ts'). Respects .gitignore when inside a git repo.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Glob pattern to match files", "default": "**/*"},
+                "path": {"type": "string", "description": "Directory to search in", "default": "."},
+            },
+        },
+        "execute": _list_files,
+    },
+    {
         "name": "bash",
         "description": "Run a shell command. Use for git, tests, builds, etc.",
         "parameters": {
@@ -149,7 +205,7 @@ TOOLS: list[dict] = [
 ]
 
 # Read-only subset for explorer sub-agents
-EXPLORER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "search", "bash")]
+EXPLORER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "search", "list_files", "bash")]
 # Tools for test runner sub-agents (read + bash)
 TEST_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "bash")]
 # Full tool access for coder sub-agents
