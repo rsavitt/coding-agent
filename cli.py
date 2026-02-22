@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--provider", choices=["anthropic", "openai"], default=None)
     parser.add_argument("--model", default=None, help="Model override")
     parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL")
+    parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
     args = parser.parse_args()
 
     # Init provider
@@ -30,22 +31,23 @@ def main():
         provider = auto_detect_provider()
 
     model = args.model or ""
+    stream = not args.no_stream
 
     # Assemble tools: base tools + delegation tools
     all_tools = TOOLS + get_delegation_tools(provider, model)
 
     if args.prompt:
-        _one_shot(provider, all_tools, model, args.prompt)
+        _one_shot(provider, all_tools, model, args.prompt, stream)
     else:
-        _repl(provider, all_tools, model)
+        _repl(provider, all_tools, model, stream)
 
 
-def _one_shot(provider, tools, model, prompt):
+def _one_shot(provider, tools, model, prompt, stream):
     messages = [{"role": "user", "content": prompt}]
-    agent_loop(provider, messages, tools, system=MAIN_AGENT_SYSTEM, model=model)
+    agent_loop(provider, messages, tools, system=MAIN_AGENT_SYSTEM, model=model, stream=stream)
 
 
-def _repl(provider, tools, model):
+def _repl(provider, tools, model, stream):
     print("\033[1mCoding Agent\033[0m (type 'quit' to exit)")
     messages = []
 
@@ -63,7 +65,7 @@ def _repl(provider, tools, model):
 
         messages.append({"role": "user", "content": user_input})
         print()
-        agent_loop(provider, messages, tools, system=MAIN_AGENT_SYSTEM, model=model)
+        agent_loop(provider, messages, tools, system=MAIN_AGENT_SYSTEM, model=model, stream=stream)
 
 
 if __name__ == "__main__":
