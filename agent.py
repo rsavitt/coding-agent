@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 
+from context import maybe_compact
 from providers import Response
 
 # Commands considered safe to run without user confirmation
@@ -22,6 +23,9 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
     total_in, total_out = 0, 0
 
     for turn in range(1, max_turns + 1):
+        # Compact context if approaching token limits
+        maybe_compact(messages, total_in, provider, model=model)
+
         call_kwargs = {"model": model} if model else {}
         resp = provider.call(messages=messages, tools=tools, system=system, **call_kwargs)
         total_in += resp.input_tokens
@@ -54,10 +58,6 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
             tool_results.append(_tool_result(tc.id, result))
 
         messages.append({"role": "user", "content": tool_results})
-
-        # Context budget warning
-        if total_in > 150_000:
-            print(f"\033[33m[context: {total_in:,} input tokens used]\033[0m")
 
     print("\033[33m[max turns reached]\033[0m")
     _print_usage(total_in, total_out, max_turns)
