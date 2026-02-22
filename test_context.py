@@ -197,7 +197,7 @@ class TestAgentLoopIntegration:
         # But we need to verify maybe_compact is called on the right path.
         # Since initial total_in=0, compaction won't trigger on first turn.
         # It would trigger on turn 2+ if total_in exceeds threshold.
-        agent_loop(provider, messages, tools=[], system="sys")
+        agent_loop(provider, messages, tools=[], system="sys", stream=False)
 
         # Just verify it didn't crash and the provider was called
         provider.call.assert_called_once()
