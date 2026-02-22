@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
@@ -78,7 +79,9 @@ class SubAgentRunner:
                 result = result[:15000] + "\n\n... (truncated) ...\n\n" + result[-15000:]
             return result
         except Exception as e:
-            return f"Error: {e}"
+            tb = traceback.format_exc()
+            tb_short = "\n".join(tb.strip().splitlines()[-3:])
+            return f"Error: {type(e).__name__}: {e}\n{tb_short}"
 
     def _force_summary(self, messages, total_in, total_out, turns, status):
         """Ask the sub-agent for a final summary without tools."""
@@ -163,7 +166,12 @@ def _make_delegate_parallel_tool(provider, model: str) -> dict:
                 try:
                     ordered[idx] = future.result()
                 except Exception as e:
-                    ordered[idx] = SubAgentResult(summary=str(e), status="error")
+                    tb = traceback.format_exc()
+                    tb_short = "\n".join(tb.strip().splitlines()[-5:])
+                    ordered[idx] = SubAgentResult(
+                        summary=f"{type(e).__name__}: {e}\n\nTraceback:\n{tb_short}",
+                        status="error",
+                    )
 
         parts = []
         for i, r in enumerate(ordered):
