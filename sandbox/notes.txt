@@ -1,0 +1,4 @@
+TODO:
+- Add error handling to divide()
+- Write a fibonacci function
+- Add type hints to math_utils.py
