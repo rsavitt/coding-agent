@@ -21,19 +21,24 @@ _SHELL_OPERATORS = re.compile(r";|&&|\|\||`|\$\(")
 
 
 def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
-               model: str = "", max_turns: int = 100) -> None:
+               model: str = "", max_turns: int = 100, stream: bool = True) -> None:
     """Run the agent loop: call LLM, execute tools, repeat until done."""
     tool_map = {t["name"]: t["execute"] for t in tools}
     total_in, total_out = 0, 0
+    use_streaming = stream and hasattr(provider, "call_streaming")
 
     for turn in range(1, max_turns + 1):
         call_kwargs = {"model": model} if model else {}
-        resp = provider.call(messages=messages, tools=tools, system=system, **call_kwargs)
+        if use_streaming:
+            # call_streaming prints text tokens as they arrive
+            resp = provider.call_streaming(messages=messages, tools=tools, system=system, **call_kwargs)
+        else:
+            resp = provider.call(messages=messages, tools=tools, system=system, **call_kwargs)
         total_in += resp.input_tokens
         total_out += resp.output_tokens
 
-        # Print any text
-        if resp.text:
+        # Print text (only needed in non-streaming mode; streaming already printed it)
+        if not use_streaming and resp.text:
             print(resp.text)
 
         # If no tool calls, we're done
