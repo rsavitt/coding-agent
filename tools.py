@@ -103,6 +103,44 @@ def _list_files(pattern: str = "**/*", path: str = ".") -> str:
         return f"Error: {e}"
 
 
+def _list_directory(path: str = ".", show_hidden: bool = False) -> str:
+    """List directory contents with file type and size."""
+    path = os.path.expanduser(path)
+    if not os.path.isdir(path):
+        return f"Error: {path} is not a directory"
+
+    try:
+        items = sorted(os.listdir(path))
+    except PermissionError:
+        return f"Error: permission denied for {path}"
+
+    entries = []
+    for name in items:
+        if not show_hidden and name.startswith("."):
+            continue
+        full_path = os.path.join(path, name)
+        try:
+            stat = os.stat(full_path)
+            size = stat.st_size
+            is_dir = os.path.isdir(full_path)
+            type_indicator = "dir" if is_dir else "file"
+            if size < 1024:
+                size_str = f"{size}B"
+            elif size < 1024 * 1024:
+                size_str = f"{size / 1024:.1f}KB"
+            else:
+                size_str = f"{size / (1024 * 1024):.1f}MB"
+            entries.append(f"  {type_indicator:<5} {size_str:>8}  {name}")
+        except OSError:
+            entries.append(f"  ?     ?         {name}")
+
+    if not entries:
+        return "(empty directory)"
+
+    header = f"{path}/ ({len(entries)} items)"
+    return header + "\n" + "\n".join(entries)
+
+
 def _bash(command: str, timeout: int = 120) -> str:
     try:
         result = subprocess.run(
@@ -190,6 +228,18 @@ TOOLS: list[dict] = [
         "execute": _list_files,
     },
     {
+        "name": "list_directory",
+        "description": "List contents of a directory with file types and sizes. More structured than bash('ls').",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory path to list", "default": "."},
+                "show_hidden": {"type": "boolean", "description": "Include hidden files (dotfiles)", "default": False},
+            },
+        },
+        "execute": _list_directory,
+    },
+    {
         "name": "bash",
         "description": "Run a shell command. Use for git, tests, builds, etc.",
         "parameters": {
@@ -205,7 +255,7 @@ TOOLS: list[dict] = [
 ]
 
 # Read-only subset for explorer sub-agents
-EXPLORER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "search", "list_files", "bash")]
+EXPLORER_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "search", "list_files", "list_directory", "bash")]
 # Tools for test runner sub-agents (read + bash)
 TEST_TOOLS = [t for t in TOOLS if t["name"] in ("read_file", "bash")]
 # Full tool access for coder sub-agents
