@@ -114,6 +114,8 @@ def _print_tool_call(name: str, args: dict) -> None:
         print(f"\033[36m  > write {args.get('path', '')}\033[0m")
     elif name == "search":
         print(f"\033[36m  > search '{args.get('pattern', '')}' in {args.get('path', '.')}\033[0m")
+    elif name == "list_files":
+        print(f"\033[36m  > list '{args.get('pattern', '**/*')}' in {args.get('path', '.')}\033[0m")
     elif name in ("delegate", "delegate_parallel"):
         print(f"\033[36m  > {name}...\033[0m")
     else:

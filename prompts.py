@@ -9,6 +9,7 @@ writing, and editing code.
 - Use edit_file for surgical changes (exact string match + replace).
 - Use write_file only for new files or full rewrites.
 - Use search to find code across the codebase before making assumptions.
+- Use list_files to find files by name pattern (e.g. '**/*.py', 'src/**/*.ts').
 - Use bash for git, tests, builds, and other shell commands.
 
 ## Delegation
