@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 
 
@@ -24,6 +25,83 @@ class Response:
     stop_reason: str = ""
 
 
+# --- Retry logic ---
+
+# Max retries for transient errors
+MAX_RETRIES = 3
+
+# HTTP status codes worth retrying
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Check if an exception is a transient error worth retrying."""
+    # Anthropic SDK errors
+    cls_name = type(exc).__name__
+    if cls_name in ("RateLimitError", "InternalServerError", "APIConnectionError",
+                    "APITimeoutError", "OverloadedError"):
+        return True
+
+    # OpenAI SDK errors
+    if cls_name in ("RateLimitError", "APIConnectionError", "APITimeoutError",
+                    "InternalServerError"):
+        return True
+
+    # Check for status_code attribute (both SDKs set this on HTTP errors)
+    status = getattr(exc, "status_code", None)
+    if status in _RETRYABLE_STATUS_CODES:
+        return True
+
+    # Connection errors
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return True
+
+    return False
+
+
+def _get_retry_after(exc: Exception) -> float | None:
+    """Extract Retry-After header value from an exception, if available."""
+    # Both SDKs sometimes expose response headers
+    response = getattr(exc, "response", None)
+    if response is not None:
+        headers = getattr(response, "headers", {})
+        retry_after = headers.get("retry-after") or headers.get("Retry-After")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
+def _call_with_retry(fn, *args, max_retries: int = MAX_RETRIES, **kwargs):
+    """Call fn with exponential backoff on transient errors."""
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries or not _is_retryable(exc):
+                raise
+
+            # Calculate delay: exponential backoff with jitter, or Retry-After header
+            retry_after = _get_retry_after(exc)
+            if retry_after is not None:
+                delay = retry_after
+            else:
+                delay = min(2 ** attempt, 30)  # 1s, 2s, 4s... capped at 30s
+
+            print(
+                f"\033[33m[retry {attempt + 1}/{max_retries}: "
+                f"{type(exc).__name__}, waiting {delay:.1f}s]\033[0m",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+    raise last_exc  # unreachable, but satisfies type checkers
+
+
 class AnthropicProvider:
     def __init__(self, api_key: str | None = None):
         import anthropic
@@ -36,7 +114,7 @@ class AnthropicProvider:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = [_to_anthropic_tool(t) for t in tools]
-        resp = self.client.messages.create(**kwargs)
+        resp = _call_with_retry(self.client.messages.create, **kwargs)
 
         text_parts, tool_calls = [], []
         for block in resp.content:
@@ -138,7 +216,7 @@ class OpenAIProvider:
         kwargs = dict(model=model, max_tokens=max_tokens, messages=msgs)
         if tools:
             kwargs["tools"] = [_to_openai_tool(t) for t in tools]
-        resp = self.client.chat.completions.create(**kwargs)
+        resp = _call_with_retry(self.client.chat.completions.create, **kwargs)
 
         choice = resp.choices[0]
         text = choice.message.content or ""
