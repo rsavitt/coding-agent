@@ -6,16 +6,49 @@ import os
 import subprocess
 
 
+# File patterns that commonly contain secrets
+_SENSITIVE_PATTERNS = (".env", ".env.local", ".env.production", "credentials.json",
+                       ".pem", ".key", ".p12", ".pfx")
+
+
+def _is_sensitive_file(path: str) -> bool:
+    """Check if a file path matches common secret-containing patterns."""
+    base = os.path.basename(path)
+    return any(base == p or base.endswith(p) for p in _SENSITIVE_PATTERNS)
+
+
+def _is_binary_file(path: str) -> bool:
+    """Check if a file appears to be binary by looking for null bytes in first 8KB."""
+    try:
+        with open(path, "rb") as f:
+            chunk = f.read(8192)
+        return b"\x00" in chunk
+    except OSError:
+        return False
+
+
 def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
     path = os.path.expanduser(path)
     if not os.path.isfile(path):
         return f"Error: {path} does not exist"
+
+    # Warn on binary files
+    if _is_binary_file(path):
+        size = os.path.getsize(path)
+        return f"Warning: {path} appears to be a binary file ({size} bytes). Use bash to inspect binary files."
+
+    # Warn on sensitive files
+    warning = ""
+    if _is_sensitive_file(path):
+        warning = f"⚠ Warning: {path} may contain secrets. Be careful not to expose sensitive values.\n\n"
+
     with open(path) as f:
         lines = f.readlines()
     start = max(0, offset)
     end = start + limit if limit > 0 else len(lines)
     numbered = [f"{i + start + 1:>6}\t{line}" for i, line in enumerate(lines[start:end])]
-    return "".join(numbered) if numbered else "(empty file)"
+    content = "".join(numbered) if numbered else "(empty file)"
+    return warning + content
 
 
 def _edit_file(path: str, old_string: str, new_string: str) -> str:
@@ -51,8 +84,12 @@ def _search(pattern: str, path: str = ".", glob: str = "") -> str:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         return result.stdout[:30000] or "(no matches)"
     except FileNotFoundError:
-        # fallback to grep if rg not installed
-        cmd = ["grep", "-rn", pattern, path]
+        # fallback to grep if rg not installed — exclude common ignored dirs
+        cmd = ["grep", "-rn",
+               "--exclude-dir=.git", "--exclude-dir=node_modules",
+               "--exclude-dir=__pycache__", "--exclude-dir=.venv",
+               "--exclude-dir=venv", "--exclude-dir=.tox",
+               pattern, path]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         return result.stdout[:30000] or "(no matches)"
     except subprocess.TimeoutExpired:
