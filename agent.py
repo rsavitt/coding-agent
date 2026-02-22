@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 
 from providers import Response
@@ -13,6 +14,10 @@ SAFE_BASH_PREFIXES = (
     "python -m pytest", "pytest", "python -m mypy", "mypy",
     "ruff", "black --check", "npm test", "npm run", "cargo test",
 )
+
+# Shell metacharacters that chain or nest commands
+_SHELL_OPERATORS = re.compile(r";|&&|\|\||`|\$\(")
+# Pipe is allowed (e.g. "grep foo | head") but each segment is checked
 
 
 def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
@@ -77,8 +82,31 @@ def _execute_tool(tool_map: dict, name: str, arguments: dict) -> str:
 
 
 def _is_safe_bash(command: str) -> bool:
+    """Check if a bash command is safe to run without confirmation.
+
+    Splits on shell operators (;, &&, ||, backticks, $()) and pipes,
+    then verifies every segment starts with a safe prefix. A single
+    unsafe segment makes the whole command unsafe.
+    """
     cmd = command.strip()
-    return any(cmd.startswith(p) for p in SAFE_BASH_PREFIXES)
+    if not cmd:
+        return False
+
+    # Reject commands containing subshells or command substitution outright —
+    # these can nest arbitrarily and are not safe to parse with regex.
+    if _SHELL_OPERATORS.search(cmd):
+        return False
+
+    # Split on pipes and check each segment
+    segments = cmd.split("|")
+    return all(_segment_is_safe(seg.strip()) for seg in segments)
+
+
+def _segment_is_safe(segment: str) -> bool:
+    """Check if a single command segment (no pipes/chains) is safe."""
+    if not segment:
+        return False
+    return any(segment.startswith(p) for p in SAFE_BASH_PREFIXES)
 
 
 def _confirm_bash(command: str) -> bool:
