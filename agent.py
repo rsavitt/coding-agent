@@ -8,6 +8,7 @@ import sys
 from context import maybe_compact
 from debug import debug_log, debug_request, debug_response, debug_timer
 from providers import Response
+from tokens import estimate_system_tokens, estimate_tool_tokens
 
 # Commands considered safe to run without user confirmation
 SAFE_BASH_PREFIXES = (
@@ -29,9 +30,15 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
     total_in, total_out = 0, 0
     use_streaming = stream and hasattr(provider, "call_streaming")
 
+    # Estimate fixed token overhead from tool schemas and system prompt
+    tool_overhead = estimate_tool_tokens(tools)
+    system_overhead = estimate_system_tokens(system)
+    fixed_overhead = tool_overhead + system_overhead
+    debug_log(f"fixed token overhead: ~{fixed_overhead:,} (tools: ~{tool_overhead:,}, system: ~{system_overhead:,})")
+
     for turn in range(1, max_turns + 1):
-        # Compact context if approaching token limits
-        maybe_compact(messages, total_in, provider, model=model)
+        # Compact context if approaching token limits (account for fixed overhead)
+        maybe_compact(messages, total_in + fixed_overhead, provider, model=model)
 
         call_kwargs = {"model": model} if model else {}
         debug_request(messages, tools, model, system)
@@ -50,7 +57,7 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
 
         # If no tool calls, we're done
         if not resp.tool_calls:
-            _print_usage(total_in, total_out, turn)
+            _print_usage(total_in, total_out, turn, fixed_overhead)
             return
 
         # Build assistant message
@@ -74,7 +81,7 @@ def agent_loop(provider, messages: list[dict], tools: list[dict], system: str,
         messages.append({"role": "user", "content": tool_results})
 
     print("\033[33m[max turns reached]\033[0m")
-    _print_usage(total_in, total_out, max_turns)
+    _print_usage(total_in, total_out, max_turns, fixed_overhead)
 
 
 def _execute_tool(tool_map: dict, name: str, arguments: dict) -> str:
@@ -164,6 +171,8 @@ def _print_tool_call(name: str, args: dict) -> None:
         print(f"\033[36m  > {name}\033[0m")
 
 
-def _print_usage(input_tokens: int, output_tokens: int, turns: int) -> None:
-    print(f"\033[90m[{turns} turns | {input_tokens:,} in + {output_tokens:,} out tokens]\033[0m",
+def _print_usage(input_tokens: int, output_tokens: int, turns: int,
+                 fixed_overhead: int = 0) -> None:
+    overhead_str = f" (~{fixed_overhead:,} fixed)" if fixed_overhead else ""
+    print(f"\033[90m[{turns} turns | {input_tokens:,} in{overhead_str} + {output_tokens:,} out tokens]\033[0m",
           file=sys.stderr)

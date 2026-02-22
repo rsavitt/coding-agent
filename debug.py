@@ -26,7 +26,9 @@ def debug_request(messages: list[dict], tools: list[dict], model: str, system: s
     """Log a summary of the API request."""
     if not DEBUG:
         return
-    debug_log(f"model={model} | {len(messages)} messages | {len(tools)} tools")
+    from tokens import estimate_tool_tokens
+    tool_tokens = estimate_tool_tokens(tools)
+    debug_log(f"model={model} | {len(messages)} messages | {len(tools)} tools (~{tool_tokens} tokens)")
     if system:
         debug_log(f"system: {system[:100]}{'...' if len(system) > 100 else ''}")
     for i, msg in enumerate(messages):
