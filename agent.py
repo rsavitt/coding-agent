@@ -83,7 +83,10 @@ def _execute_tool(tool_map: dict, name: str, arguments: dict) -> str:
             result = result[:15000] + "\n\n... (truncated) ...\n\n" + result[-15000:]
         return result
     except Exception as e:
-        return f"Error: {type(e).__name__}: {e}"
+        import traceback
+        tb = traceback.format_exc()
+        tb_short = "\n".join(tb.strip().splitlines()[-3:])
+        return f"Error: {type(e).__name__}: {e}\n{tb_short}"
 
 
 def _is_safe_bash(command: str) -> bool:
