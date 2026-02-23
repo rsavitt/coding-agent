@@ -42,8 +42,11 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
     if _is_sensitive_file(path):
         warning = f"⚠ Warning: {path} may contain secrets. Be careful not to expose sensitive values.\n\n"
 
-    with open(path) as f:
-        lines = f.readlines()
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except OSError as e:
+        return f"Error: Unable to read {path}: {e}"
     start = max(0, offset)
     end = start + limit if limit > 0 else len(lines)
     numbered = [f"{i + start + 1:>6}\t{line}" for i, line in enumerate(lines[start:end])]
