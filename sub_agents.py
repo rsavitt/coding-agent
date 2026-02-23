@@ -150,6 +150,9 @@ def _make_delegate_tool(provider, model: str) -> dict:
 def _make_delegate_parallel_tool(provider, model: str) -> dict:
     def _delegate_parallel(tasks: list[dict]) -> str:
         """tasks: list of {task: str, agent_type: str}"""
+        if not tasks:
+            return ""
+            
         results = []
         with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as pool:
             futures = {}
