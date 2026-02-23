@@ -69,10 +69,21 @@ def _edit_file(path: str, old_string: str, new_string: str) -> str:
 
 def _write_file(path: str, content: str) -> str:
     path = os.path.expanduser(path)
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
-    return "OK"
+    try:
+        dirname = os.path.dirname(path)
+        if dirname:  # Only create directories if there is a directory component
+            os.makedirs(dirname, exist_ok=True)
+        with open(path, "w", encoding='utf-8') as f:
+            f.write(content)
+        return "OK"
+    except PermissionError:
+        return f"Error: Permission denied writing to '{path}'"
+    except IsADirectoryError:
+        return f"Error: '{path}' is a directory, cannot write file"
+    except OSError as e:
+        return f"Error: Cannot create directory or write file '{path}': {e}"
+    except Exception as e:
+        return f"Error writing file '{path}': {e}"
 
 
 def _search(pattern: str, path: str = ".", glob: str = "") -> str:
