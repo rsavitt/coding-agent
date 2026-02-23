@@ -181,10 +181,15 @@ class AnthropicProvider:
                         current_tool_json += delta.partial_json
                 elif event.type == "content_block_stop":
                     if current_tool_id is not None:
+                        try:
+                            arguments = json.loads(current_tool_json) if current_tool_json else {}
+                        except json.JSONDecodeError:
+                            # Handle malformed JSON from streaming API
+                            arguments = {}
                         tool_calls.append(ToolCall(
                             id=current_tool_id,
                             name=current_tool_name,
-                            arguments=json.loads(current_tool_json) if current_tool_json else {},
+                            arguments=arguments,
                         ))
                         current_tool_id = None
                         current_tool_name = None
@@ -311,10 +316,15 @@ class OpenAIProvider:
         tool_calls = []
         for idx in sorted(tool_calls_by_index):
             entry = tool_calls_by_index[idx]
+            try:
+                arguments = json.loads(entry["arguments"]) if entry["arguments"] else {}
+            except json.JSONDecodeError:
+                # Handle malformed JSON from streaming API
+                arguments = {}
             tool_calls.append(ToolCall(
                 id=entry["id"],
                 name=entry["name"],
-                arguments=json.loads(entry["arguments"]) if entry["arguments"] else {},
+                arguments=arguments,
             ))
 
         return Response(
