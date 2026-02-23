@@ -42,15 +42,46 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
     if _is_sensitive_file(path):
         warning = f"⚠ Warning: {path} may contain secrets. Be careful not to expose sensitive values.\n\n"
 
+    # Check file size to prevent memory issues
+    try:
+        file_size = os.path.getsize(path)
+        if file_size > 10_000_000:  # 10MB limit
+            return f"Error: File {path} is too large ({file_size:,} bytes). Use offset/limit parameters for large files or bash commands."
+    except OSError as e:
+        return f"Error: Unable to check file size for {path}: {e}"
+
     try:
         with open(path, encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
+            # For very large files, use iterative reading with offset/limit
+            if file_size > 1_000_000:  # 1MB - use line-by-line reading
+                lines = []
+                for i, line in enumerate(f):
+                    if i < offset:
+                        continue
+                    if limit > 0 and len(lines) >= limit:
+                        break
+                    lines.append(line)
+                    # Safety check - truncate if output gets too long
+                    if len("".join(lines)) > 50000:
+                        lines.append("... (truncated - file too large)\n")
+                        break
+            else:
+                lines = f.readlines()
     except OSError as e:
         return f"Error: Unable to read {path}: {e}"
-    start = max(0, offset)
-    end = start + limit if limit > 0 else len(lines)
-    numbered = [f"{i + start + 1:>6}\t{line}" for i, line in enumerate(lines[start:end])]
+    
+    if file_size <= 1_000_000:  # Apply offset/limit for smaller files
+        start = max(0, offset)
+        end = start + limit if limit > 0 else len(lines)
+        lines = lines[start:end]
+    
+    numbered = [f"{i + offset + 1:>6}\t{line}" for i, line in enumerate(lines)]
     content = "".join(numbered) if numbered else "(empty file)"
+    
+    # Final safety check - truncate if result is too long
+    if len(content) > 50000:
+        content = content[:50000] + "\n... (truncated)"
+    
     return warning + content
 
 
