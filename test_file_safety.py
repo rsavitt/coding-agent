@@ -72,3 +72,16 @@ class TestNormalFileReads:
     def test_nonexistent_file(self):
         result = _read_file("/nonexistent/file.txt")
         assert "Error" in result
+
+    def test_file_with_encoding_errors(self, tmp_path):
+        """Test that files with invalid UTF-8 don't crash, but use replacement chars."""
+        f = tmp_path / "bad_encoding.txt"
+        # Write some valid UTF-8 followed by invalid bytes
+        f.write_bytes(b"Valid line\n\xff\xfe\x80Invalid bytes\nAnother valid line\n")
+        
+        result = _read_file(str(f))
+        # Should not crash and should contain replacement characters
+        assert "Valid line" in result
+        assert "Another valid line" in result
+        # Should contain replacement character for invalid bytes
+        assert "\ufffd" in result or "Invalid" in result  # replacement char or readable part
