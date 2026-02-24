@@ -212,7 +212,11 @@ class AnthropicProvider:
 class OpenAIProvider:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         import openai
-        kwargs = {"api_key": api_key or os.environ["OPENAI_API_KEY"]}
+        # For local servers (ollama, llama.cpp), accept a dummy key
+        key = api_key or os.environ.get("OPENAI_API_KEY") or ("ollama" if base_url else None)
+        if not key:
+            raise RuntimeError("Set OPENAI_API_KEY or provide api_key/base_url for a local server")
+        kwargs = {"api_key": key}
         if base_url:
             kwargs["base_url"] = base_url
         self.client = openai.OpenAI(**kwargs)
