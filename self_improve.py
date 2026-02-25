@@ -16,6 +16,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -41,6 +43,85 @@ IMPROVEMENT_AXES = [
 ]
 
 RUNS_DIR = Path("runs")
+
+# Default artifacts repo — override with --artifacts-repo or SWARM_ARTIFACTS_REPO
+DEFAULT_ARTIFACTS_REPO = os.environ.get(
+    "SWARM_ARTIFACTS_REPO",
+    os.path.expanduser("~/swarm-artifacts"),
+)
+ARTIFACTS_SUBDIR = "runs/coding-agent-self-improve"
+
+
+# ---------------------------------------------------------------------------
+# Artifacts sync
+# ---------------------------------------------------------------------------
+
+def sync_to_artifacts(artifacts_repo: str, runs_dir: Path, auto_push: bool = False):
+    """Copy runs to swarm-artifacts repo and optionally commit+push."""
+    repo = Path(artifacts_repo)
+    if not repo.is_dir():
+        print(f"  [WARN] Artifacts repo not found: {repo}. Skipping sync.")
+        return False
+
+    dest = repo / ARTIFACTS_SUBDIR
+    dest.mkdir(parents=True, exist_ok=True)
+
+    # Sync all run directories and manifest
+    synced = []
+    for item in sorted(runs_dir.iterdir()):
+        target = dest / item.name
+        if item.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(item, target)
+            synced.append(item.name)
+        elif item.is_file() and item.suffix == ".json":
+            shutil.copy2(item, target)
+            synced.append(item.name)
+
+    if not synced:
+        return False
+
+    print(f"  Synced {len(synced)} items to {dest}")
+
+    # Git add + commit
+    try:
+        subprocess.run(
+            ["git", "add", ARTIFACTS_SUBDIR],
+            cwd=repo, capture_output=True, timeout=30,
+        )
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=repo, capture_output=True, timeout=10,
+        )
+        if result.returncode != 0:  # there are staged changes
+            manifest = runs_dir / "manifest.json"
+            iters = 0
+            if manifest.exists():
+                with open(manifest) as f:
+                    iters = json.load(f).get("iterations_completed", 0)
+            subprocess.run(
+                ["git", "commit", "-m", f"Sync self-improvement runs ({iters} iterations)"],
+                cwd=repo, capture_output=True, timeout=30,
+            )
+            print(f"  Committed to artifacts repo")
+
+            if auto_push:
+                push = subprocess.run(
+                    ["git", "push"],
+                    cwd=repo, capture_output=True, text=True, timeout=60,
+                )
+                if push.returncode == 0:
+                    print(f"  Pushed to remote")
+                else:
+                    print(f"  [WARN] Push failed: {push.stderr.strip()}")
+        else:
+            print(f"  No new changes to commit")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"  [WARN] Git operations failed: {e}")
+
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Phase system prompts
@@ -730,6 +811,12 @@ def main():
                         help="Max turns per phase (default: 15, lower for local models)")
     parser.add_argument("--max-phase-tokens", type=int, default=None,
                         help="Token budget per phase (default: 100000, lower for local models)")
+    parser.add_argument("--artifacts-repo", default=DEFAULT_ARTIFACTS_REPO,
+                        help=f"Path to swarm-artifacts repo (default: {DEFAULT_ARTIFACTS_REPO})")
+    parser.add_argument("--no-sync", action="store_true",
+                        help="Skip syncing runs to artifacts repo")
+    parser.add_argument("--auto-push", action="store_true",
+                        help="Auto-push artifacts repo after sync")
     args = parser.parse_args()
 
     # Init provider
@@ -802,6 +889,11 @@ def main():
     manifest.save(manifest_path)
     print(f"\nDone. {manifest.iterations_completed} total iterations.")
     print(f"Manifest saved to {manifest_path.resolve()}")
+
+    # Sync to artifacts repo
+    if not args.no_sync:
+        print(f"\nSyncing runs to artifacts repo...")
+        sync_to_artifacts(args.artifacts_repo, RUNS_DIR, auto_push=args.auto_push)
 
 
 if __name__ == "__main__":
